@@ -1,22 +1,53 @@
+from __future__ import annotations
+
+import argparse
 from pathlib import Path
+
+import requests
 
 from src.churn_pipeline import train_and_save
 from src.visualize import save_model_comparison
 
-
 DATASET = Path("data/WA_Fn-UseC_-Telco-Customer-Churn.csv")
+DATASET_URLS = [
+    "https://raw.githubusercontent.com/IBM/watsonx-ai-samples/master/cpd4.5/data/customer_churn/WA_FnUseC_TelcoCustomerChurn.csv",
+    "https://raw.githubusercontent.com/SaeidRostami/Customer_Churn/master/WA_Fn-UseC_-Telco-Customer-Churn.csv",
+]
+
+
+def ensure_dataset() -> None:
+    if DATASET.exists() and DATASET.stat().st_size > 100_000:
+        return
+
+    DATASET.parent.mkdir(parents=True, exist_ok=True)
+    last_error = None
+    for url in DATASET_URLS:
+        try:
+            response = requests.get(url, timeout=60)
+            response.raise_for_status()
+            if b"customerID" not in response.content[:500]:
+                raise ValueError("Downloaded file does not look like the expected Telco CSV.")
+            DATASET.write_bytes(response.content)
+            return
+        except Exception as exc:
+            last_error = exc
+
+    raise RuntimeError(f"Unable to download the Telco churn dataset: {last_error}")
 
 
 if __name__ == "__main__":
-    if not DATASET.exists():
-        raise FileNotFoundError(
-            f"Dataset not found at {DATASET}. Add the IBM Telco Customer Churn CSV first."
-        )
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--deployment",
+        action="store_true",
+        help="Use the faster deployment training profile for Render.",
+    )
+    args = parser.parse_args()
 
-    results, model_path = train_and_save(DATASET)
+    ensure_dataset()
+    results, model_path = train_and_save(DATASET, deployment=args.deployment)
     save_model_comparison(results, "outputs/model_comparison.png")
 
     print("\nModel comparison:")
     print(results.to_string(index=False))
     print(f"\nBest model saved to: {model_path}")
-    print("\nNext: streamlit run app.py")

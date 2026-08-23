@@ -73,7 +73,7 @@ The Render deployment uses a **faster deployment profile** containing Logistic R
 
 ## Dataset
 
-The application uses the commonly used **IBM Telco Customer Churn** sample dataset containing customer demographics, services, contract information and billing information. IBM's public sample repository contains the dataset and describes the broader churn-prediction workflow. citeturn0search6turn0search8
+The application uses the commonly used **IBM Telco Customer Churn** sample dataset containing customer demographics, services, contract information and billing information. The dataset is publicly available through IBM's sample-data repositories.
 
 The training script automatically downloads the dataset when it is not already present locally. For local/manual runs, it can also be placed at:
 
@@ -185,7 +185,7 @@ Plan:
 Free
 ```
 
-The included `render.yaml` contains the same configuration for repeatable deployment.
+The included `render.yaml` contains the deployment configuration for repeatable setup.
 
 ### Deployment behavior
 

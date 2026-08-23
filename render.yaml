@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: customer-churn-prediction
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt && python scripts/train.py --deployment
+    startCommand: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9

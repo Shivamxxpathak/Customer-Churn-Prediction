@@ -3,8 +3,13 @@ __pycache__/
 *.pyc
 .DS_Store
 .ipynb_checkpoints/
+
+# Generated training artifacts
 outputs/*.csv
 outputs/*.png
 models/*.joblib
 models/*.pkl
+models/*.json
+
+# Local dataset downloaded during training
 data/*.csv

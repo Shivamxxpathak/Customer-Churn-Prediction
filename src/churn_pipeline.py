@@ -1,17 +1,17 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 import joblib
 import pandas as pd
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import AdaBoostClassifier, GradientBoostingClassifier, RandomForestClassifier, VotingClassifier
+from sklearn.ensemble import AdaBoostClassifier, GradientBoostingClassifier, RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
-from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
@@ -22,9 +22,10 @@ TARGET = "Churn"
 
 
 def load_data(path: str | Path) -> pd.DataFrame:
-    """Load the Telco churn CSV and normalize common formatting issues."""
     df = pd.read_csv(path)
     df.columns = [str(c).strip() for c in df.columns]
+    if "customerID" in df.columns:
+        df = df.drop(columns=["customerID"])
     if "TotalCharges" in df.columns:
         df["TotalCharges"] = pd.to_numeric(df["TotalCharges"], errors="coerce")
     if TARGET not in df.columns:
@@ -37,20 +38,20 @@ def build_preprocessor(X: pd.DataFrame) -> ColumnTransformer:
     categorical_features = X.select_dtypes(exclude="number").columns.tolist()
 
     numeric_pipe = Pipeline(
-        steps=[
+        [
             ("imputer", SimpleImputer(strategy="median")),
             ("scaler", StandardScaler()),
         ]
     )
     categorical_pipe = Pipeline(
-        steps=[
+        [
             ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("encoder", OneHotEncoder(handle_unknown="ignore")),
+            ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
         ]
     )
 
     return ColumnTransformer(
-        transformers=[
+        [
             ("numeric", numeric_pipe, numeric_features),
             ("categorical", categorical_pipe, categorical_features),
         ],
@@ -58,41 +59,48 @@ def build_preprocessor(X: pd.DataFrame) -> ColumnTransformer:
     )
 
 
-def build_models() -> dict[str, Any]:
-    return {
-        "Logistic Regression": LogisticRegression(max_iter=2000),
-        "KNN": KNeighborsClassifier(n_neighbors=7),
-        "Naive Bayes": GaussianNB(),
-        "Decision Tree": DecisionTreeClassifier(random_state=42, max_depth=8),
+def build_models(deployment: bool = False) -> dict[str, Any]:
+    models = {
+        "Logistic Regression": LogisticRegression(max_iter=2000, class_weight="balanced"),
+        "KNN": KNeighborsClassifier(n_neighbors=9),
+        "Decision Tree": DecisionTreeClassifier(max_depth=8, random_state=42, class_weight="balanced"),
         "Random Forest": RandomForestClassifier(
-            n_estimators=300, random_state=42, class_weight="balanced"
+            n_estimators=250, random_state=42, class_weight="balanced", n_jobs=-1
         ),
         "SVM": SVC(probability=True, random_state=42, class_weight="balanced"),
-        "AdaBoost": AdaBoostClassifier(n_estimators=200, random_state=42),
+        "AdaBoost": AdaBoostClassifier(n_estimators=150, random_state=42),
         "Gradient Boosting": GradientBoostingClassifier(random_state=42),
+    }
+    return {
+        name: estimator
+        for name, estimator in models.items()
+        if not deployment or name in {
+            "Logistic Regression",
+            "Random Forest",
+            "SVM",
+            "Gradient Boosting",
+        }
     }
 
 
-def evaluate_models(
-    X_train: pd.DataFrame,
-    X_test: pd.DataFrame,
-    y_train: pd.Series,
-    y_test: pd.Series,
-) -> tuple[pd.DataFrame, dict[str, Pipeline]]:
-    results = []
-    fitted: dict[str, Pipeline] = {}
+def make_pipeline(X: pd.DataFrame, estimator: Any) -> Pipeline:
+    return Pipeline(
+        [
+            ("preprocessor", build_preprocessor(X)),
+            ("model", estimator),
+        ]
+    )
 
-    for name, estimator in build_models().items():
-        pipeline = Pipeline(
-            steps=[
-                ("preprocessor", build_preprocessor(X_train)),
-                ("model", estimator),
-            ]
-        )
+
+def evaluate_models(X_train, X_test, y_train, y_test, deployment: bool = False):
+    results = []
+    fitted = {}
+
+    for name, estimator in build_models(deployment=deployment).items():
+        pipeline = make_pipeline(X_train, estimator)
         pipeline.fit(X_train, y_train)
         pred = pipeline.predict(X_test)
         proba = pipeline.predict_proba(X_test)[:, 1]
-
         results.append(
             {
                 "Model": name,
@@ -105,75 +113,34 @@ def evaluate_models(
         )
         fitted[name] = pipeline
 
-    voting_estimators = [
-        ("lr", fitted["Logistic Regression"]),
-        ("rf", fitted["Random Forest"]),
-        ("svm", fitted["SVM"]),
-    ]
-    # VotingClassifier expects base estimators that are not already fitted.
-    voting = VotingClassifier(
-        estimators=[
-            ("lr", LogisticRegression(max_iter=2000)),
-            ("rf", RandomForestClassifier(n_estimators=300, random_state=42, class_weight="balanced")),
-            ("svm", SVC(probability=True, random_state=42, class_weight="balanced")),
-        ],
-        voting="soft",
-    )
-    voting_pipeline = Pipeline(
-        steps=[
-            ("preprocessor", build_preprocessor(X_train)),
-            ("model", voting),
-        ]
-    )
-    voting_pipeline.fit(X_train, y_train)
-    voting_pred = voting_pipeline.predict(X_test)
-    voting_proba = voting_pipeline.predict_proba(X_test)[:, 1]
-    results.append(
-        {
-            "Model": "Voting Ensemble",
-            "Accuracy": accuracy_score(y_test, voting_pred),
-            "Precision": precision_score(y_test, voting_pred, zero_division=0),
-            "Recall": recall_score(y_test, voting_pred, zero_division=0),
-            "F1": f1_score(y_test, voting_pred, zero_division=0),
-            "ROC-AUC": roc_auc_score(y_test, voting_proba),
-        }
-    )
-    fitted["Voting Ensemble"] = voting_pipeline
-
     return pd.DataFrame(results).sort_values("ROC-AUC", ascending=False), fitted
-
-
-def cross_validate_best(
-    pipeline: Pipeline,
-    X: pd.DataFrame,
-    y: pd.Series,
-    folds: int = 5,
-) -> tuple[float, float]:
-    cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=42)
-    scores = cross_val_score(pipeline, X, y, cv=cv, scoring="roc_auc")
-    return float(scores.mean()), float(scores.std())
 
 
 def train_and_save(
     dataset_path: str | Path,
     output_dir: str | Path = "outputs",
     model_dir: str | Path = "models",
-) -> tuple[pd.DataFrame, Path]:
+    deployment: bool = False,
+):
     df = load_data(dataset_path)
-    y = df[TARGET].map({"Yes": 1, "No": 0}) if df[TARGET].dtype == "object" else df[TARGET]
+    y = df[TARGET].map({"Yes": 1, "No": 0}).astype(int)
     X = df.drop(columns=[TARGET])
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    results, fitted = evaluate_models(X_train, X_test, y_train, y_test)
-    best_name = results.iloc[0]["Model"]
+    results, fitted = evaluate_models(X_train, X_test, y_train, y_test, deployment=deployment)
+    best_name = str(results.iloc[0]["Model"])
     best_pipeline = fitted[best_name]
 
-    cv_mean, cv_std = cross_validate_best(best_pipeline, X_train, y_train)
-    results.loc[results["Model"] == best_name, "CV ROC-AUC Mean"] = cv_mean
-    results.loc[results["Model"] == best_name, "CV ROC-AUC Std"] = cv_std
+    cv_mean, cv_std = (None, None)
+    if not deployment:
+        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+        scores = cross_val_score(best_pipeline, X_train, y_train, cv=cv, scoring="roc_auc", n_jobs=-1)
+        cv_mean, cv_std = float(scores.mean()), float(scores.std())
+        results.loc[results["Model"] == best_name, "CV ROC-AUC Mean"] = cv_mean
+        results.loc[results["Model"] == best_name, "CV ROC-AUC Std"] = cv_std
 
     output_dir = Path(output_dir)
     model_dir = Path(model_dir)
@@ -181,7 +148,8 @@ def train_and_save(
     model_dir.mkdir(parents=True, exist_ok=True)
 
     results.to_csv(output_dir / "model_comparison.csv", index=False)
-    joblib.dump(best_pipeline, model_dir / "best_churn_model.joblib")
+    model_path = model_dir / "best_churn_model.joblib"
+    joblib.dump(best_pipeline, model_path)
 
     predictions = pd.DataFrame(
         {
@@ -192,4 +160,18 @@ def train_and_save(
     )
     predictions.to_csv(output_dir / "test_predictions.csv", index=False)
 
-    return results, model_dir / "best_churn_model.joblib"
+    best_row = results.iloc[0].to_dict()
+    metadata = {
+        "best_model": best_name,
+        "training_mode": "deployment" if deployment else "full",
+        "dataset_rows": int(len(df)),
+        "test_rows": int(len(X_test)),
+        "metrics": {
+            key: round(float(value), 4)
+            for key, value in best_row.items()
+            if key != "Model" and pd.notna(value)
+        },
+    }
+    (model_dir / "model_metadata.json").write_text(json.dumps(metadata, indent=2))
+
+    return results, model_path

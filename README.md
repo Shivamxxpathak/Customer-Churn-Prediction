@@ -9,7 +9,7 @@
 
 ## Live Application
 
-**Render:** add the generated Render URL here after the first successful deployment.
+🚀 **[Open the live Customer Churn Predictor](https://customer-churn-prediction-1nnj.onrender.com/)**
 
 The application accepts a customer profile, returns a churn probability, assigns a risk band, and provides a suggested retention action.
 
@@ -98,13 +98,13 @@ Customer-Churn-Prediction/
 │   └── README.md                  # Dataset instructions
 │
 ├── models/                        # Generated model artifacts (gitignored)
-│
 ├── outputs/                       # Generated metrics/plots (gitignored)
 │
 ├── scripts/
 │   └── train.py                   # Dataset bootstrap + training entry point
 │
 ├── src/
+│   ├── __init__.py
 │   ├── churn_pipeline.py          # Preprocessing, training, evaluation
 │   └── visualize.py               # Model comparison visualization
 │

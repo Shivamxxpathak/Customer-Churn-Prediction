@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import requests
 
-from src.churn_pipeline import train_and_save
-from src.visualize import save_model_comparison
+ROOT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT_DIR))
 
-DATASET = Path("data/WA_Fn-UseC_-Telco-Customer-Churn.csv")
+from src.churn_pipeline import train_and_save  # noqa: E402
+from src.visualize import save_model_comparison  # noqa: E402
+
+DATASET = ROOT_DIR / "data" / "WA_Fn-UseC_-Telco-Customer-Churn.csv"
 DATASET_URLS = [
     "https://raw.githubusercontent.com/IBM/watsonx-ai-samples/master/cpd4.5/data/customer_churn/WA_FnUseC_TelcoCustomerChurn.csv",
     "https://raw.githubusercontent.com/SaeidRostami/Customer_Churn/master/WA_Fn-UseC_-Telco-Customer-Churn.csv",
@@ -46,7 +50,7 @@ if __name__ == "__main__":
 
     ensure_dataset()
     results, model_path = train_and_save(DATASET, deployment=args.deployment)
-    save_model_comparison(results, "outputs/model_comparison.png")
+    save_model_comparison(results, ROOT_DIR / "outputs" / "model_comparison.png")
 
     print("\nModel comparison:")
     print(results.to_string(index=False))

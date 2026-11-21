@@ -270,3 +270,8 @@ Potential future upgrades:
 ## License
 
 MIT License.
+
+
+## Evaluation Transparency
+
+The repository generates model-comparison metrics and charts during training; generated files under `outputs/` are intentionally not committed. Run `python scripts/train.py` to reproduce the local benchmark, or `python scripts/train.py --deployment` for the faster hosted profile. The deployed profile compares four models and selects by hold-out ROC-AUC; do not assume its selected model or score is identical across runs unless the generated metadata is inspected. The app is a decision-support demonstration, and its risk thresholds are not calibrated to real retention costs.
